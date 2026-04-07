@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}VPN Панель - VPN Key Manager{% endblock %}
+
+{% block content %}
+<div class="nav">
+    <a href="/">Главная</a>
+    <a href="/vpn/panel">VPN Ключи</a>
+    <a href="/vpn/new">Создать Ключ</a>
+    <a href="/profile">Профиль</a>
+    <a href="/logout">Выйти</a>
+</div>
+
+<h1>Мои VPN Ключи</h1>
+<p class="subtitle">Управление VPN подключениями</p>
+
+{% if success %}
+<div class="success">{{ success }}</div>
+{% endif %}
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+{% if vpn_keys %}
+<div style="margin-bottom: 20px;">
+    {% for vpn_key in vpn_keys %}
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="color: #333; margin: 0;">{{ vpn_key.email }}</h3>
+            <span style="background: {{ '#d4edda' if vpn_key.is_active else '#f8d7da' }}; color: {{ '#155724' if vpn_key.is_active else '#721c24' }}; padding: 4px 12px; border-radius: 12px; font-size: 12px;">
+                {{ 'Активен' if vpn_key.is_active else 'Неактивен' }}
+            </span>
+        </div>
+        
+        <div style="color: #666; font-size: 14px; margin-bottom: 10px;">
+            <p style="margin: 5px 0;"><strong>Протокол:</strong> {{ vpn_key.protocol }}</p>
+            <p style="margin: 5px 0;"><strong>Лимит IP:</strong> {{ 'Безлимит' if vpn_key.limit_ip == 0 else vpn_key.limit_ip }}</p>
+            <p style="margin: 5px 0;"><strong>Трафик:</strong> {{ 'Безлимит' if vpn_key.total_gb == 0 else (vpn_key.total_gb / 1073741824)|round(1) }} GB</p>
+            {% if vpn_key.expire_time > 0 %}
+            <p style="margin: 5px 0;"><strong>Истекает:</strong> {{ vpn_key.expire_time | timestamp_to_date }}</p>
+            {% else %}
+            <p style="margin: 5px 0;"><strong>Срок:</strong> Бессрочно</p>
+            {% endif %}
+        </div>
+        
+        {% if vpn_key.connection_link %}
+        <div style="background: white; padding: 10px; border-radius: 4px; margin-top: 10px;">
+            <p style="font-size: 12px; color: #666; margin-bottom: 5px;">Ссылка для подключения:</p>
+            <code style="font-size: 11px; word-break: break-all; display: block; background: #f5f5f5; padding: 8px; border-radius: 3px;">
+                {{ vpn_key.connection_link }}
+            </code>
+            <button onclick="copyToClipboard('{{ vpn_key.connection_link }}')" style="margin-top: 8px; width: auto; padding: 8px 16px; font-size: 13px;">
+                Копировать ссылку
+            </button>
+        </div>
+        {% endif %}
+        
+        {% if vpn_key.subscription_url %}
+        <div style="margin-top: 10px;">
+            <a href="{{ vpn_key.subscription_url }}" target="_blank" style="color: #667eea; text-decoration: none; font-size: 14px;">
+                URL подписки →
+            </a>
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 15px; text-align: right;">
+            <form method="post" action="/vpn/keys/{{ vpn_key.id }}/revoke" style="display: inline;">
+                <button type="submit" style="width: auto; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 8px 16px; font-size: 13px;" 
+                        onclick="return confirm('Вы уверены, что хотите отозвать этот ключ?')">
+                    Отозвать ключ
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+<div style="text-align: center; padding: 40px; color: #666;">
+    <p style="font-size: 18px; margin-bottom: 20px;">У вас пока нет VPN ключей</p>
+    <a href="/vpn/new" class="btn" style="display: inline-block; padding: 14px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        Создать первый ключ
+    </a>
+</div>
+{% endif %}
+
+<div style="margin-top: 30px; text-align: center;">
+    <a href="/vpn/new" style="display: inline-block; padding: 14px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        + Создать новый ключ
+    </a>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        alert('Ссылка скопирована!');
+    }).catch(function(err) {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Ссылка скопирована!');
+    });
+}
+</script>
+{% endblock %}

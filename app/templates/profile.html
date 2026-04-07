@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Профиль - VPN Key Manager{% endblock %}
+
+{% block content %}
+<div class="nav">
+    <a href="/">Главная</a>
+    <a href="/vpn/panel">VPN Ключи</a>
+    <a href="/vpn/new">Создать Ключ</a>
+    <a href="/profile">Профиль</a>
+    <a href="/logout">Выйти</a>
+</div>
+
+<h1>Профиль пользователя</h1>
+<p class="subtitle">Информация о вашем аккаунте</p>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+{% if success %}
+<div class="success">{{ success }}</div>
+{% endif %}
+
+<div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+    <p style="margin-bottom: 10px;"><strong>ID:</strong> {{ user.id }}</p>
+    <p style="margin-bottom: 10px;"><strong>Имя пользователя:</strong> {{ user.username }}</p>
+    <p style="margin-bottom: 10px;"><strong>Email:</strong> {{ user.email }}</p>
+    <p style="margin-bottom: 10px;"><strong>Активен:</strong> {{ "Да" if user.is_active else "Нет" }}</p>
+    <p><strong>Дата регистрации:</strong> {{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+</div>
+
+<h2 style="font-size: 20px; margin-bottom: 15px;">Обновить данные</h2>
+
+<form method="post" action="/profile">
+    <div class="form-group">
+        <label for="username">Новое имя пользователя</label>
+        <input type="text" id="username" name="username" value="{{ user.username }}">
+    </div>
+    
+    <div class="form-group">
+        <label for="email">Новый email</label>
+        <input type="email" id="email" name="email" value="{{ user.email }}">
+    </div>
+    
+    <div class="form-group">
+        <label for="password">Новый пароль (оставьте пустым, если не хотите менять)</label>
+        <input type="password" id="password" name="password" minlength="8">
+    </div>
+    
+    <button type="submit">Обновить профиль</button>
+</form>
+{% endblock %}

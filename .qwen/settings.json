@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv *)",
+      "Bash(copy *)",
+      "Bash(.venv\\scripts\\python *)",
+      "Bash(dir *)",
+      "Bash(docker-compose *)",
+      "Bash(timeout *)",
+      "Bash(curl *)",
+      "Bash(taskkill *)"
+    ]
+  },
+  "$version": 3
+}

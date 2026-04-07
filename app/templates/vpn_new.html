@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Создать VPN Ключ - VPN Key Manager{% endblock %}
+
+{% block content %}
+<div class="nav">
+    <a href="/">Главная</a>
+    <a href="/vpn/panel">VPN Ключи</a>
+    <a href="/vpn/new">Создать Ключ</a>
+    <a href="/profile">Профиль</a>
+    <a href="/logout">Выйти</a>
+</div>
+
+<h1>Создать новый VPN ключ</h1>
+<p class="subtitle">Заполните параметры для генерации ключа</p>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+{% if inbounds %}
+<form method="post" action="/vpn/generate">
+    <div class="form-group">
+        <label for="email">Email / Имя ключа</label>
+        <input type="text" id="email" name="email" required placeholder="my-vpn-key">
+    </div>
+    
+    <div class="form-group">
+        <label for="inbound_id">Сервер (Inbound)</label>
+        <select id="inbound_id" name="inbound_id" required style="width: 100%; padding: 12px 15px; border: 2px solid #e1e1e1; border-radius: 6px; font-size: 14px;">
+            {% for inbound in inbounds %}
+            <option value="{{ inbound.id }}">
+                {{ inbound.protocol | upper }} - Порт {{ inbound.port }} (Клиентов: {{ inbound.client_count }})
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label for="protocol">Протокол</label>
+        <select id="protocol" name="protocol" style="width: 100%; padding: 12px 15px; border: 2px solid #e1e1e1; border-radius: 6px; font-size: 14px;">
+            <option value="vless">VLESS</option>
+            <option value="vmess">VMess</option>
+            <option value="trojan">Trojan</option>
+            <option value="shadowsocks">Shadowsocks</option>
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label for="limit_ip">Лимит IP (0 = безлимит)</label>
+        <input type="number" id="limit_ip" name="limit_ip" value="0" min="0" placeholder="0">
+    </div>
+    
+    <div class="form-group">
+        <label for="total_gb">Лимит трафика в GB (0 = безлимит)</label>
+        <input type="number" id="total_gb" name="total_gb" value="0" min="0" placeholder="0">
+    </div>
+    
+    <div class="form-group">
+        <label for="expire_days">Срок действия в днях (0 = бессрочно)</label>
+        <input type="number" id="expire_days" name="expire_days" value="30" min="0" placeholder="30">
+    </div>
+    
+    <div class="form-group">
+        <label for="flow">Flow (для VLESS, опционально)</label>
+        <input type="text" id="flow" name="flow" placeholder="xtls-rprx-vision">
+    </div>
+    
+    <button type="submit">Сгенерировать ключ</button>
+</form>
+
+<div class="link">
+    <a href="/vpn/panel">← Назад к списку ключей</a>
+</div>
+{% else %}
+<div class="error">
+    Нет доступных серверов (inbounds). Обратитесь к администратору.
+</div>
+
+<div class="link">
+    <a href="/vpn/panel">← Назад к списку ключей</a>
+</div>
+{% endif %}
+
+<script>
+// Auto-select protocol based on inbound selection
+document.getElementById('inbound_id').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const protocol = selectedOption.textContent.split(' - ')[0].toLowerCase();
+    const protocolSelect = document.getElementById('protocol');
+    
+    for (let i = 0; i < protocolSelect.options.length; i++) {
+        if (protocolSelect.options[i].value === protocol) {
+            protocolSelect.selectedIndex = i;
+            break;
+        }
+    }
+});
+</script>
+{% endblock %}
