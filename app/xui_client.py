@@ -6,6 +6,9 @@ import logging
 import json
 from urllib.parse import quote, urlencode, urlparse
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 import py3xui
 from py3xui.client.client import Client
 

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     VPN_SID: str = ""
     VPN_SPX: str = "/"
 
+    # Telegram
+    TELEGRAM_BOT_TOKEN: str = "8548738879:AAG17FwYiajZp8jNHkovGxL3Ro24OIAasqE"
+
     # App
     APP_NAME: str = "VPN Key Manager"
     DEBUG: bool = True

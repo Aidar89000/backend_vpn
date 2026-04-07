@@ -20,20 +20,23 @@ from app.crud.spa import (
     top_up_balance,
     update_device_name,
 )
-from app.crud.user import create_user, get_user_by_email, get_user_by_username
+from app.crud.user import create_user, get_user_by_email, get_user_by_username, verify_password
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.email_verification_code import EmailVerificationCode
+from app.models.telegram_auth_code import TelegramAuthCode
 from app.schemas.spa import (
     DeviceCreateRequest,
     DeviceResponse,
     EmailCodeRequest,
     DeviceUpdateRequest,
     EmailLoginRequest,
+    EmailPasswordRequest,
     MessageResponse,
     ProfileResponse,
     SessionResponse,
     SessionUser,
+    TelegramLoginRequest,
     TopUpRequest,
     TopUpResponse,
     TransactionResponse,
@@ -147,6 +150,81 @@ async def email_login(payload: EmailLoginRequest, db: AsyncSession = Depends(get
 
     verification.is_used = True
     user = await _get_or_create_email_user(db, payload.email)
+    await db.commit()
+    await db.refresh(user)
+    return SessionResponse(
+        access_token=create_access_token(user.id),
+        user=SessionUser(id=user.id, email=user.email, balance=user.balance),
+    )
+
+
+@router.post("/auth/login", response_model=SessionResponse)
+async def email_password_login(payload: EmailPasswordRequest, db: AsyncSession = Depends(get_db)):
+    user = await get_user_by_email(db, payload.email)
+    if user:
+        if not verify_password(payload.password, user.hashed_password):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный пароль")
+    else:
+        base_username = _username_from_email(payload.email)
+        username = base_username
+        suffix = 1
+        while await get_user_by_username(db, username):
+            suffix += 1
+            username = f"{base_username}_{suffix}"
+        user = await create_user(
+            db,
+            UserCreate(username=username, email=payload.email, password=payload.password),
+        )
+
+    return SessionResponse(
+        access_token=create_access_token(user.id),
+        user=SessionUser(id=user.id, email=user.email, balance=user.balance),
+    )
+
+
+@router.post("/auth/telegram-login", response_model=SessionResponse)
+async def telegram_login(payload: TelegramLoginRequest, db: AsyncSession = Depends(get_db)):
+    code = payload.code.strip()
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверный код")
+
+    result = await db.execute(
+        select(TelegramAuthCode)
+        .where(
+            TelegramAuthCode.code == code,
+            TelegramAuthCode.is_used.is_(False),
+        )
+        .order_by(TelegramAuthCode.created_at.desc())
+    )
+    auth_code = result.scalar_one_or_none()
+    if auth_code is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверный код")
+
+    expires_at = auth_code.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Код истёк")
+
+    auth_code.is_used = True
+
+    telegram_id = auth_code.telegram_id
+    tg_email = f"tg_{telegram_id}@telegram.local"
+
+    user = await get_user_by_email(db, tg_email)
+    if not user:
+        tg_username = auth_code.telegram_username or str(telegram_id)
+        base_username = f"tg_{tg_username}"
+        username = base_username
+        suffix = 1
+        while await get_user_by_username(db, username):
+            suffix += 1
+            username = f"{base_username}_{suffix}"
+        user = await create_user(
+            db,
+            UserCreate(username=username, email=tg_email, password=secrets.token_urlsafe(32)),
+        )
+
     await db.commit()
     await db.refresh(user)
     return SessionResponse(

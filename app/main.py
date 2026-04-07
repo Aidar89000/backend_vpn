@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import engine, init_db
 from app.routers import auth, spa, vpn
+from app.services.telegram_bot import start_bot, stop_bot
 
 settings = get_settings()
 frontend_dist = settings.FRONTEND_DIST_DIR
@@ -41,9 +42,11 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.APP_NAME}...")
     await init_db()
     print("✓ Database initialized")
+    await start_bot()
     print("✓ Application started successfully")
     yield
     print("Shutting down application...")
+    await stop_bot()
     await engine.dispose()
 
 

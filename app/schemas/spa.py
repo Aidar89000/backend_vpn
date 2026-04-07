@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class EmailCodeRequest(BaseModel):
@@ -10,13 +10,22 @@ class EmailLoginRequest(BaseModel):
     code: str
 
 
+class EmailPasswordRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+
+
+class TelegramLoginRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
 class MessageResponse(BaseModel):
     message: str
 
 
 class SessionUser(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     balance: int
 
 
@@ -61,5 +70,5 @@ class TopUpResponse(BaseModel):
 
 
 class ProfileResponse(BaseModel):
-    email: EmailStr
+    email: str
     balance: int

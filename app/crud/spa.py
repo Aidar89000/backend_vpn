@@ -46,6 +46,9 @@ async def _create_remote_key(xui_email: str) -> tuple[str, str]:
     if not inbounds_result["success"]:
         raise RuntimeError(inbounds_result["error"] or "3X-UI inbounds are unavailable")
 
+    # Clean up orphaned client with same email (e.g. from a previous failed attempt)
+    await asyncio.to_thread(xui_client.delete_client_by_email, xui_email)
+
     inbound = inbounds_result["inbounds"][0]
     result = await asyncio.to_thread(
         xui_client.add_client,
