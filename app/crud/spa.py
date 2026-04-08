@@ -17,10 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def _device_xui_email(user: User, device_id: int) -> str:
+    """Generate XUI email for a device. Use fixed domain to avoid invalid characters."""
     local, _, domain = user.email.partition("@")
-    safe_local = "".join(ch if ch.isalnum() else "_" for ch in local) or "user"
-    safe_domain = domain or "local"
-    return f"{safe_local}.device{device_id}@{safe_domain}"
+    # Оставляем только буквенно-цифровые символы и подчёркивания
+    safe_local = "".join(ch if ch.isalnum() or ch == '_' else "_" for ch in local.lower()) or "user"
+    # Ограничиваем длину чтобы не превысить лимиты XUI
+    safe_local = safe_local[:50]
+    # Используем фиксированный домен вместо домена пользователя
+    return f"{safe_local}.device{device_id}@avara.local"
 
 
 def _client_id_from_link(link: str) -> str | None:
