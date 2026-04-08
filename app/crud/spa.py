@@ -150,7 +150,11 @@ async def add_transaction(
 
 
 async def create_device(db: AsyncSession, user: User, name: str, device_type: str) -> Device:
+    """Create a new device. If XUI key creation fails, rollback the balance."""
+    # Сначала списываем баланс (но не коммитим)
     user.balance -= DEVICE_PRICE
+    
+    # Создаём устройство с временным ключом
     expiry_at = datetime.now(timezone.utc) + timedelta(days=30)
     device = Device(
         user_id=user.id,
@@ -161,9 +165,26 @@ async def create_device(db: AsyncSession, user: User, name: str, device_type: st
         connection_key="pending",
     )
     db.add(device)
-    await db.flush()
+    await db.flush()  # Получаем device.id
+    
     device.xui_email = _device_xui_email(user, device.id)
-    link, client_id = await _create_remote_key(device.xui_email)
+    
+    try:
+        # Пробуем создать ключ в XUI
+        link, client_id = await _create_remote_key(device.xui_email)
+    except RuntimeError as exc:
+        # Если XUI недоступен - откатываем баланс и удаляем устройство
+        logger.warning(
+            "Failed to create XUI key for device %s: %s. Rolling back.",
+            device.id,
+            exc,
+        )
+        user.balance += DEVICE_PRICE  # Возвращаем баланс
+        await db.delete(device)  # Удаляем устройство
+        await db.commit()
+        raise  # Пробрасываем ошибку дальше
+    
+    # Если всё успешно - сохраняем
     device.connection_key = link
     device.xui_client_id = client_id
     await add_transaction(db, user, "purchase", -DEVICE_PRICE, "Новое устройство")

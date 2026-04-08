@@ -119,6 +119,50 @@ def build_xui_api(host: str) -> py3xui.Api:
     return xui
 
 
+def test_xui_login_direct(host: str) -> bool:
+    """Test XUI login using direct HTTP request to API."""
+    import requests
+    
+    # Пробуем разные варианты login endpoint
+    login_urls = [
+        f"{host}/login",
+        f"{host.rstrip('/')}/login",
+    ]
+    
+    for login_url in login_urls:
+        try:
+            # Пробуем с form data (как делает py3xui)
+            response = requests.post(
+                login_url,
+                data={
+                    "username": settings.XUI_USERNAME,
+                    "password": settings.XUI_PASSWORD,
+                },
+                verify=False,
+                timeout=10,
+            )
+            
+            if response.status_code == 200:
+                try:
+                    json_resp = response.json()
+                    if json_resp.get("success") or json_resp.get("msg") == "Login successful":
+                        logger.info("Direct login successful at %s", host)
+                        return True
+                except:
+                    pass
+            
+            logger.warning(
+                "Direct login attempt at %s failed with status %d, response: %s",
+                login_url,
+                response.status_code,
+                response.text[:200],
+            )
+        except Exception as exc:
+            logger.debug("Direct login at %s failed: %s", login_url, exc)
+    
+    return False
+
+
 def get_xui_api() -> py3xui.Api:
     """Get or create XUI API client."""
     global api, api_host
@@ -138,8 +182,25 @@ def ensure_login() -> py3xui.Api:
             if api is None or api_host != host:
                 api_host = host
                 api = build_xui_api(host)
-            api.login()
-            return api
+            
+            # Пробуем стандартный логин py3xui
+            try:
+                api.login()
+                logger.info("Successfully logged in to XUI at %s", host)
+                return api
+            except Exception as login_error:
+                # Если стандартный логин не сработал, пробуем прямой запрос
+                error_msg = str(login_error).lower()
+                if "invalid username or password" in error_msg:
+                    # Логируем детали для отладки
+                    logger.error(
+                        "XUI login failed with credentials. "
+                        "Host: %s, Username: %s. "
+                        "Check if 3X-UI API credentials are correct.",
+                        host,
+                        settings.XUI_USERNAME,
+                    )
+                raise
         except Exception as exc:
             last_error = exc
             logger.warning("XUI login failed for host %s: %s", host, exc)
