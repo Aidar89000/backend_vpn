@@ -530,17 +530,20 @@ def generate_client_link(inbound, client: dict) -> str:
             else:
                 stream_dict = {}
             
-            # Получаем reality_settings
-            reality = stream_dict.get('realitySettings', {})
-            if not reality:
-                reality = stream_dict.get('reality_settings', {})
+            # Получаем reality_settings - пробуем оба варианта ключей
+            reality = (stream_dict.get('realitySettings') or 
+                      stream_dict.get('reality_settings') or 
+                      {})
             
             network = settings.VPN_NETWORK or stream_dict.get('network', 'tcp')
             security = settings.VPN_SECURITY or stream_dict.get('security', 'none')
             
             # Логируем для отладки
             logger.info("=== Reality Settings Debug ===")
-            logger.info("stream_dict keys: %s", list(stream_dict.keys()))
+            logger.info("stream type: %s", type(stream).__name__)
+            logger.info("stream_dict type: %s", type(stream_dict).__name__)
+            logger.info("stream_dict keys: %s", list(stream_dict.keys()) if isinstance(stream_dict, dict) else 'NOT DICT')
+            logger.info("stream_dict content: %s", json.dumps(stream_dict, indent=2, default=str)[:800] if isinstance(stream_dict, dict) else str(stream_dict)[:800])
             logger.info("reality keys: %s", list(reality.keys()) if reality else 'EMPTY')
             logger.info("reality content: %s", json.dumps(reality, indent=2)[:500] if reality else 'EMPTY')
             logger.info("==================================")
@@ -559,10 +562,12 @@ def generate_client_link(inbound, client: dict) -> str:
 
             if security == 'reality':
                 # Берём publicKey и shortId напрямую из reality dict
+                # XUI отдаёт: publicKey, shortId, serverName (не serverNames!)
                 pbk = reality.get('publicKey', '')
                 sid = reality.get('shortId', '')
-                sni_list = reality.get('serverNames', [])
-                sni = sni_list[0] if isinstance(sni_list, list) and sni_list else reality.get('serverName', '')
+                
+                # serverName - это строка, не список!
+                sni = reality.get('serverName', '')
                 fp = reality.get('fingerprint', 'chrome')
                 spx = reality.get('spiderX', '/')
                 
@@ -583,7 +588,7 @@ def generate_client_link(inbound, client: dict) -> str:
                 params['sid'] = sid
                 params['spx'] = spx
                 
-                logger.info("Final reality params: pbk=%s..., sid=%s, sni=%s", 
+                logger.info("✅ Final reality params: pbk=%s..., sid=%s, sni=%s", 
                           pbk[:20] if pbk else 'EMPTY', sid, sni)
 
             query = urlencode(params, doseq=True, quote_via=quote)

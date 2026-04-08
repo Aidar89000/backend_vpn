@@ -285,11 +285,40 @@ async def get_dashboard_data(
 @router.get("/debug/xui")
 async def debug_xui(current_user: UserResponse = Depends(get_current_user)):
     result = xui_client.get_inbounds_result()
-    return {
+    
+    # Детальная отладка inbound
+    debug_info = {
         "success": result["success"],
         "error": result["error"],
         "inbounds_count": len(result["inbounds"]),
     }
+    
+    if result["inbounds"]:
+        inbound = result["inbounds"][0]
+        debug_info["first_inbound"] = {
+            "id": getattr(inbound, 'id', None),
+            "protocol": getattr(inbound, 'protocol', None),
+            "port": getattr(inbound, 'port', None),
+        }
+        
+        # Проверяем stream_settings
+        stream = getattr(inbound, 'stream_settings', None)
+        if hasattr(stream, 'model_dump'):
+            stream_dict = stream.model_dump(by_alias=True)
+            debug_info["stream_settings"] = stream_dict
+            debug_info["stream_type"] = "StreamSettings object"
+        elif isinstance(stream, dict):
+            stream_dict = stream
+            debug_info["stream_settings"] = stream_dict
+            debug_info["stream_type"] = "dict"
+        elif isinstance(stream, str):
+            debug_info["stream_settings"] = stream[:500]
+            debug_info["stream_type"] = "string"
+        else:
+            debug_info["stream_settings"] = None
+            debug_info["stream_type"] = type(stream).__name__
+    
+    return debug_info
 
 
 @router.get("/user/devices", response_model=list[DeviceResponse])
