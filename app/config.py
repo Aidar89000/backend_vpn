@@ -23,9 +23,9 @@ class Settings(BaseSettings):
 
     # XUI Panel
     XUI_HOST: str = "https://194.87.25.149:21346/0jfNLyvtF2tTBZV1v5"
-    XUI_USERNAME: str = "admin"
-    
-    XUI_PASSWORD: str = "admin"
+    XUI_USERNAME: str = "8PpR8fSJfS"
+
+    XUI_PASSWORD: str = "LvmfZ3JPdO"
     VPN_LINK_REMARK: str = "KRUTOY_VPN"
     VPN_PUBLIC_HOST: str = "194.87.25.149"
     VPN_PUBLIC_PORT: int = 443
