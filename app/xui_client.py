@@ -5,7 +5,9 @@ Uses py3xui library to interact with XUI panel.
 import logging
 import json
 import time
+import asyncio
 from urllib.parse import quote, urlencode, urlparse
+from functools import lru_cache
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -20,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 api = None
 api_host = None
+
+# Кэш для inbounds (TTL 60 секунд)
+_inbounds_cache = {"data": None, "timestamp": 0}
+_INBOUNDS_CACHE_TTL = 60  # секунд
 
 
 def candidate_hosts() -> list[str]:
@@ -162,22 +168,36 @@ def get_inbounds() -> list:
 
 
 def get_inbounds_result() -> dict:
-    """Get all inbounds from XUI panel with detailed status."""
+    """Get all inbounds from XUI panel with detailed status (cached)."""
+    global _inbounds_cache
+    
+    # Проверяем кэш
+    current_time = time.time()
+    if _inbounds_cache["data"] is not None and (current_time - _inbounds_cache["timestamp"]) < _INBOUNDS_CACHE_TTL:
+        return _inbounds_cache["data"]
+    
     try:
         api_client = ensure_login()
         inbounds = api_client.inbound.get_list()
         inbounds = inbounds or []
         if not inbounds:
-            return {
+            result = {
                 "success": False,
                 "inbounds": [],
                 "error": "No inbounds found in 3X-UI panel",
             }
-        return {
-            "success": True,
-            "inbounds": inbounds,
-            "error": None,
-        }
+        else:
+            result = {
+                "success": True,
+                "inbounds": inbounds,
+                "error": None,
+            }
+        
+        # Сохраняем в кэш
+        _inbounds_cache["data"] = result
+        _inbounds_cache["timestamp"] = current_time
+        
+        return result
     except Exception as exc:
         logger.exception('Error getting inbounds: %s', exc)
         return {

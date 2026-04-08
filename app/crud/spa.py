@@ -107,6 +107,30 @@ async def list_transactions(db: AsyncSession, user: User) -> list[Transaction]:
     return list(result.scalars().all())
 
 
+async def get_user_profile(db: AsyncSession, user: User) -> dict:
+    """Get user profile data."""
+    return {
+        "email": user.email,
+        "balance": user.balance,
+    }
+
+
+async def get_user_data_parallel(db: AsyncSession, user: User) -> dict:
+    """Get all user data in parallel for faster response."""
+    # Выполняем запросы параллельно
+    devices, transactions, profile = await asyncio.gather(
+        list_devices(db, user),
+        list_transactions(db, user),
+        get_user_profile(db, user),
+    )
+    
+    return {
+        "profile": profile,
+        "devices": devices,
+        "transactions": transactions,
+    }
+
+
 async def add_transaction(
     db: AsyncSession,
     user: User,

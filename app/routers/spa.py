@@ -265,6 +265,23 @@ async def get_profile(current_user: UserResponse = Depends(get_current_user)):
     return ProfileResponse(email=current_user.email, balance=current_user.balance)
 
 
+@router.get("/user/dashboard-data")
+async def get_dashboard_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Get all dashboard data in parallel for faster response."""
+    from app.crud.spa import get_user_data_parallel, serialize_device, serialize_transaction
+    
+    data = await get_user_data_parallel(db, current_user)
+    
+    return {
+        "profile": data["profile"],
+        "devices": [serialize_device(device) for device in data["devices"]],
+        "transactions": [serialize_transaction(tx) for tx in data["transactions"]],
+    }
+
+
 @router.get("/debug/xui")
 async def debug_xui(current_user: UserResponse = Depends(get_current_user)):
     result = xui_client.get_inbounds_result()
