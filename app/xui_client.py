@@ -600,7 +600,6 @@ def generate_client_link(inbound, client: dict) -> str:
             host = inbound.listen or '0.0.0.0'
 
             import base64
-            import json
 
             config = {
                 'v': '2',
