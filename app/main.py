@@ -42,11 +42,20 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.APP_NAME}...")
     await init_db()
     print("✓ Database initialized")
-    await start_bot()
+    
+    try:
+        await start_bot()
+    except Exception as exc:
+        print(f"⚠ Telegram bot startup failed (continuing anyway): {exc}")
+        print("Application will start without Telegram authentication")
+    
     print("✓ Application started successfully")
     yield
     print("Shutting down application...")
-    await stop_bot()
+    try:
+        await stop_bot()
+    except Exception:
+        pass
     await engine.dispose()
 
 

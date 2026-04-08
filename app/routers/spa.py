@@ -161,21 +161,48 @@ async def email_login(payload: EmailLoginRequest, db: AsyncSession = Depends(get
 @router.post("/auth/login", response_model=SessionResponse)
 async def email_password_login(payload: EmailPasswordRequest, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_email(db, payload.email)
-    if user:
-        if not verify_password(payload.password, user.hashed_password):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный пароль")
-    else:
-        base_username = _username_from_email(payload.email)
-        username = base_username
-        suffix = 1
-        while await get_user_by_username(db, username):
-            suffix += 1
-            username = f"{base_username}_{suffix}"
-        user = await create_user(
-            db,
-            UserCreate(username=username, email=payload.email, password=payload.password),
+    if not user:
+        # Пользователь не существует - ошибка, а не автоматическая регистрация
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Аккаунт не найден. Пожалуйста, зарегистрируйтесь."
         )
 
+    if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный пароль")
+
+    return SessionResponse(
+        access_token=create_access_token(user.id),
+        user=SessionUser(id=user.id, email=user.email, balance=user.balance),
+    )
+
+
+@router.post("/auth/register", response_model=SessionResponse)
+async def email_register(payload: EmailPasswordRequest, db: AsyncSession = Depends(get_db)):
+    # Проверяем, существует ли пользователь
+    existing_user = await get_user_by_email(db, payload.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким email уже существует"
+        )
+    
+    # Создаём нового пользователя
+    base_username = _username_from_email(payload.email)
+    username = base_username
+    suffix = 1
+    while await get_user_by_username(db, username):
+        suffix += 1
+        username = f"{base_username}_{suffix}"
+    
+    user = await create_user(
+        db,
+        UserCreate(username=username, email=payload.email, password=payload.password),
+    )
+    
+    await db.commit()
+    await db.refresh(user)
+    
     return SessionResponse(
         access_token=create_access_token(user.id),
         user=SessionUser(id=user.id, email=user.email, balance=user.balance),

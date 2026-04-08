@@ -58,13 +58,19 @@ async def start_bot() -> None:
         print("TELEGRAM_BOT_TOKEN not set, skipping bot startup")
         return
 
-    _application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
-    _application.add_handler(CommandHandler("start", _start_handler))
+    try:
+        _application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+        _application.add_handler(CommandHandler("start", _start_handler))
 
-    await _application.initialize()
-    await _application.start()
-    await _application.updater.start_polling(drop_pending_updates=True)
-    print("✓ Telegram bot started")
+        await _application.initialize()
+        await _application.start()
+        await _application.updater.start_polling(drop_pending_updates=True)
+        print("✓ Telegram bot started")
+    except Exception as exc:
+        # Не блокируем запуск приложения при ошибках Telegram бота
+        print(f"⚠ Telegram bot failed to start: {exc}")
+        print("Application will continue running without Telegram authentication")
+        _application = None
 
 
 async def stop_bot() -> None:

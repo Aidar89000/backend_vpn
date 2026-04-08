@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
@@ -11,6 +12,8 @@ from app.models.user import User
 from app import xui_client
 
 DEVICE_PRICE = 100
+
+logger = logging.getLogger(__name__)
 
 
 def _device_xui_email(user: User, device_id: int) -> str:
@@ -175,18 +178,48 @@ async def delete_device(db: AsyncSession, user: User, device_id: int) -> bool:
     device = await db.get(Device, device_id)
     if not device or device.user_id != user.id:
         return False
+    
+    # Пытаемся удалить клиент из XUI, но не блокируем удаление из БД при ошибках
     if device.xui_email:
-        deleted = await asyncio.to_thread(xui_client.delete_client_by_email, device.xui_email)
-        if not deleted:
-            raise RuntimeError("Failed to delete client in 3X-UI")
+        try:
+            deleted = await asyncio.to_thread(xui_client.delete_client_by_email, device.xui_email)
+            if not deleted:
+                # Логируем предупреждение, но продолжаем удаление из БД
+                logger.warning(
+                    "Failed to delete client in 3X-UI for email %s, but will remove device from DB",
+                    device.xui_email,
+                )
+        except RuntimeError as exc:
+            # Если XUI вернул ошибку, логируем и продолжаем
+            logger.warning(
+                "RuntimeError deleting client in 3X-UI for email %s: %s, but will remove device from DB",
+                device.xui_email,
+                exc,
+            )
     elif device.xui_client_id:
-        inbounds_result = await asyncio.to_thread(xui_client.get_inbounds_result)
-        if not inbounds_result["success"]:
-            raise RuntimeError(inbounds_result["error"] or "3X-UI inbounds are unavailable")
-        inbound = inbounds_result["inbounds"][0]
-        deleted = await asyncio.to_thread(xui_client.delete_client, inbound.id, device.xui_client_id)
-        if not deleted:
-            raise RuntimeError("Failed to delete client in 3X-UI")
+        try:
+            inbounds_result = await asyncio.to_thread(xui_client.get_inbounds_result)
+            if not inbounds_result["success"]:
+                logger.warning(
+                    "Failed to get inbounds for device %s, but will remove device from DB",
+                    device_id,
+                )
+            else:
+                inbound = inbounds_result["inbounds"][0]
+                deleted = await asyncio.to_thread(xui_client.delete_client, inbound.id, device.xui_client_id)
+                if not deleted:
+                    logger.warning(
+                        "Failed to delete client in 3X-UI for device %s, but will remove device from DB",
+                        device_id,
+                    )
+        except RuntimeError as exc:
+            logger.warning(
+                "RuntimeError deleting client in 3X-UI for device %s: %s, but will remove device from DB",
+                device_id,
+                exc,
+            )
+    
+    # Удаляем устройство из базы данных независимо от результата XUI
     await db.delete(device)
     await db.commit()
     return True

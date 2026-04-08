@@ -4,6 +4,7 @@ Uses py3xui library to interact with XUI panel.
 """
 import logging
 import json
+import time
 from urllib.parse import quote, urlencode, urlparse
 
 import urllib3
@@ -45,7 +46,45 @@ def candidate_hosts() -> list[str]:
     return unique_hosts
 
 
-_DEFAULT_TIMEOUT = 15  # seconds
+_DEFAULT_TIMEOUT = 30  # seconds
+_MAX_RETRIES = 3
+_RETRY_DELAY = 2  # seconds
+
+
+def _retry_on_timeout(func, *args, **kwargs):
+    """Execute function with retry on timeout errors."""
+    last_exception = None
+    
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            error_message = str(exc).lower()
+            # Проверяем, является ли ошибка таймаутом
+            is_timeout = any(keyword in error_message for keyword in [
+                'timeout', 'timed out', 'connection timed out', 'connecttimeouterror'
+            ])
+            
+            if is_timeout and attempt < _MAX_RETRIES - 1:
+                logger.warning(
+                    "Request timed out (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    _RETRY_DELAY,
+                    exc,
+                )
+                time.sleep(_RETRY_DELAY)
+                last_exception = exc
+            elif not is_timeout:
+                # Не таймаут - сразу пробрасываем
+                raise
+            else:
+                # Последняя попытка не удалась
+                last_exception = exc
+    
+    # Все попытки не удались
+    logger.error("All %d retries exhausted. Last error: %s", _MAX_RETRIES, last_exception)
+    raise last_exception
 
 
 def _patch_timeout(api_obj: py3xui.Api) -> None:
@@ -151,8 +190,11 @@ def get_inbounds_result() -> dict:
 def get_inbound_by_id(inbound_id: int):
     """Get specific inbound by ID."""
     try:
-        api_client = ensure_login()
-        return api_client.inbound.get_by_id(inbound_id)
+        def _get_inbound():
+            api_client = ensure_login()
+            return api_client.inbound.get_by_id(inbound_id)
+        
+        return _retry_on_timeout(_get_inbound)
     except Exception as exc:
         logger.exception('Error getting inbound %s: %s', inbound_id, exc)
         return None
@@ -161,12 +203,15 @@ def get_inbound_by_id(inbound_id: int):
 def get_clients(inbound_id: int) -> list:
     """Get all clients from specific inbound."""
     try:
-        api_client = ensure_login()
-        inbound = api_client.inbound.get_by_id(inbound_id)
-        if inbound and hasattr(inbound, 'settings') and inbound.settings:
-            clients = inbound.settings.get('clients', [])
-            return clients or []
-        return []
+        def _get_clients():
+            api_client = ensure_login()
+            inbound = api_client.inbound.get_by_id(inbound_id)
+            if inbound and hasattr(inbound, 'settings') and inbound.settings:
+                clients = inbound.settings.get('clients', [])
+                return clients or []
+            return []
+        
+        return _retry_on_timeout(_get_clients)
     except Exception as exc:
         logger.exception('Error getting clients for inbound %s: %s', inbound_id, exc)
         return []
@@ -225,9 +270,12 @@ def add_client(
 def delete_client(inbound_id: int, client_id: str) -> bool:
     """Delete a client from an inbound."""
     try:
-        api_client = ensure_login()
-        api_client.client.delete(inbound_id, client_id)
-        return True
+        def _delete_client():
+            api_client = ensure_login()
+            api_client.client.delete(inbound_id, client_id)
+            return True
+        
+        return _retry_on_timeout(_delete_client)
     except Exception as exc:
         logger.exception('Error deleting client %s: %s', client_id, exc)
         return False
@@ -236,8 +284,11 @@ def delete_client(inbound_id: int, client_id: str) -> bool:
 def get_client_by_email(email: str):
     """Get a client by email across all inbounds."""
     try:
-        api_client = ensure_login()
-        return api_client.client.get_by_email(email)
+        def _get_client():
+            api_client = ensure_login()
+            return api_client.client.get_by_email(email)
+        
+        return _retry_on_timeout(_get_client)
     except Exception as exc:
         logger.exception("Error getting client by email %s: %s", email, exc)
         return None
@@ -246,22 +297,40 @@ def get_client_by_email(email: str):
 def delete_client_by_email(email: str) -> bool:
     """Delete a client by email, automatically resolving inbound and UUID."""
     try:
-        api_client = ensure_login()
-        client = api_client.client.get_by_email(email)
-        if not client:
+        def _delete_by_email():
+            api_client = ensure_login()
+            client = api_client.client.get_by_email(email)
+            if not client:
+                # Клиент не найден - считаем это успешным удалением
+                logger.info("Client with email %s not found in XUI, considering it already deleted", email)
+                return True
+
+            inbound_id = getattr(client, "inbound_id", None)
+            client_uuid = getattr(client, "uuid", None) or getattr(client, "id", None)
+            if inbound_id is None or not client_uuid:
+                logger.warning(
+                    "Cannot delete client by email %s because inbound_id or uuid is missing",
+                    email,
+                )
+                return False
+
+            api_client.client.delete(int(inbound_id), str(client_uuid))
             return True
-
-        inbound_id = getattr(client, "inbound_id", None)
-        client_uuid = getattr(client, "uuid", None) or getattr(client, "id", None)
-        if inbound_id is None or not client_uuid:
+        
+        return _retry_on_timeout(_delete_by_email)
+    except ValueError as exc:
+        # Обработка ошибок "Inbound Not Found" и подобных
+        error_message = str(exc)
+        if "Inbound Not Found" in error_message or "Error getting traffics" in error_message:
             logger.warning(
-                "Cannot delete client by email %s because inbound_id or uuid is missing",
+                "Client with email %s not found in XUI (inbound error), considering it already deleted: %s",
                 email,
+                error_message,
             )
-            return False
-
-        api_client.client.delete(int(inbound_id), str(client_uuid))
-        return True
+            return True
+        # Другие ошибки ValueError
+        logger.exception("ValueError deleting client by email %s: %s", email, exc)
+        return False
     except Exception as exc:
         logger.exception("Error deleting client by email %s: %s", email, exc)
         return False
@@ -312,20 +381,23 @@ def update_client(
 def get_client_traffic(inbound_id: int, client_id: str) -> dict:
     """Get client traffic statistics."""
     try:
-        api_client = ensure_login()
-        client = api_client.client.get_by_email(client_id)
-        if not client:
-            return {'error': 'Client not found'}
+        def _get_traffic():
+            api_client = ensure_login()
+            client = api_client.client.get_by_email(client_id)
+            if not client:
+                return {'error': 'Client not found'}
 
-        return {
-            'email': client.email,
-            'upload': client.up,
-            'download': client.down,
-            'total': client.up + client.down,
-            'total_gb': client.total_gb,
-            'expiry_time': client.expiry_time,
-            'enable': client.enable,
-        }
+            return {
+                'email': client.email,
+                'upload': client.up,
+                'download': client.down,
+                'total': client.up + client.down,
+                'total_gb': client.total_gb,
+                'expiry_time': client.expiry_time,
+                'enable': client.enable,
+            }
+        
+        return _retry_on_timeout(_get_traffic)
     except Exception as exc:
         logger.exception('Error getting traffic for client %s: %s', client_id, exc)
         return {'error': str(exc)}
