@@ -534,6 +534,15 @@ def generate_client_link(inbound, client: dict) -> str:
             reality = as_dict(stream.get('reality_settings'))
             network = settings.VPN_NETWORK or first_non_empty(stream.get('network'), 'tcp')
             security = settings.VPN_SECURITY or first_non_empty(stream.get('security'), 'none')
+            
+            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ для отладки
+            logger.info("=== Reality Settings Debug ===")
+            logger.info("stream keys: %s", list(stream.keys()) if stream else 'EMPTY')
+            logger.info("reality keys: %s", list(reality.keys()) if reality else 'EMPTY')
+            logger.info("reality content: %s", json.dumps(reality, indent=2, default=str)[:500])
+            logger.info("settings.VPN_PBK: %s", settings.VPN_PBK)
+            logger.info("settings.VPN_SID: %s", settings.VPN_SID)
+            logger.info("==============================")
 
             params = {
                 'type': network,
