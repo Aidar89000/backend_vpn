@@ -336,6 +336,18 @@ def add_client(
         api_client.client.add(inbound_id, [client])
         created_client = api_client.client.get_by_email(email) or client
         link = generate_client_link(inbound, created_client.model_dump(by_alias=True, exclude_defaults=False))
+        
+        # Логируем для отладки
+        logger.info("Created client: email=%s, link_length=%d", email, len(link))
+        if 'pbk=' in link:
+            pbk_start = link.index('pbk=') + 4
+            pbk_end = link.find('&', pbk_start)
+            if pbk_end == -1:
+                pbk_end = link.find('#', pbk_start)
+            pbk_value = link[pbk_start:pbk_end] if pbk_end > pbk_start else link[pbk_start:]
+            if not pbk_value:
+                logger.warning("Generated link has EMPTY pbk! Link: %s", link[:200])
+        
         return {
             'success': True,
             'email': email,
@@ -537,13 +549,34 @@ def generate_client_link(inbound, client: dict) -> str:
 
             if security == 'reality':
                 server_names = reality.get('serverNames', [])
-                params['pbk'] = settings.VPN_PBK or reality.get('publicKey', '')
+                
+                # Пробуем разные варианты ключей (XUI может отдавать по-разному)
+                pbk = (settings.VPN_PBK or 
+                       reality.get('publicKey', '') or 
+                       reality.get('public_key', '') or
+                       reality.get('dest', '').split(':')[0] if ':' in reality.get('dest', '') else '')
+                
+                sid = (settings.VPN_SID or 
+                       reality.get('shortId', '') or 
+                       reality.get('short_id', ''))
+                
+                sni = (settings.VPN_SNI or 
+                       first_non_empty(
+                           server_names[0] if isinstance(server_names, list) and server_names else '',
+                           reality.get('serverName', ''),
+                           reality.get('server_names', [''])[0] if isinstance(reality.get('server_names', []), list) else '',
+                       ))
+                
+                # Логируем для отладки
+                logger.debug("Reality settings: pbk=%s, sid=%s, sni=%s", 
+                           pbk[:20] if pbk else 'EMPTY', 
+                           sid, 
+                           sni)
+                
+                params['pbk'] = pbk
                 params['fp'] = settings.VPN_FP or reality.get('fingerprint', 'chrome')
-                params['sni'] = settings.VPN_SNI or first_non_empty(
-                    server_names[0] if isinstance(server_names, list) and server_names else '',
-                    reality.get('serverName', ''),
-                )
-                params['sid'] = settings.VPN_SID or reality.get('shortId', '')
+                params['sni'] = sni
+                params['sid'] = sid
                 params['spx'] = settings.VPN_SPX or reality.get('spiderX', '/')
 
             query = urlencode(params, doseq=True, quote_via=quote)
