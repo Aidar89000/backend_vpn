@@ -504,35 +504,6 @@ def get_client_traffic(inbound_id: int, client_id: str) -> dict:
 def generate_client_link(inbound, client: dict) -> str:
     """Generate VPN connection link for client."""
     try:
-        logger.info("=== Generate Client Link Debug ===")
-        logger.info("inbound type: %s", type(inbound).__name__)
-        logger.info("inbound attributes: %s", dir(inbound))
-        logger.info("client keys: %s", list(client.keys()) if isinstance(client, dict) else 'NOT DICT')
-        logger.info("client content: %s", json.dumps(client, indent=2, default=str)[:500] if isinstance(client, dict) else str(client)[:500])
-        logger.info("==================================")
-        
-        def as_dict(value):
-            if value is None:
-                return {}
-            if isinstance(value, dict):
-                return value
-            if isinstance(value, str):
-                try:
-                    return json.loads(value)
-                except Exception:
-                    return {}
-            if hasattr(value, "model_dump"):
-                return value.model_dump()
-            if hasattr(value, "__dict__"):
-                return {k: v for k, v in vars(value).items() if not k.startswith("_")}
-            return {}
-
-        def first_non_empty(*values):
-            for value in values:
-                if value not in (None, "", 0, "0.0.0.0", "::"):
-                    return value
-            return ""
-
         protocol = inbound.protocol
         client_email = client.get('email', 'VPN')
         remark_prefix = settings.VPN_LINK_REMARK or 'KRUTOY_VPN'
@@ -542,19 +513,37 @@ def generate_client_link(inbound, client: dict) -> str:
             uuid = client.get('uuid') or client.get('id', '')
             port = settings.VPN_PUBLIC_PORT or inbound.port
             host = settings.VPN_PUBLIC_HOST or urlparse(settings.XUI_HOST).hostname or '127.0.0.1'
-            stream = as_dict(getattr(inbound, 'stream_settings', None))
-            reality = as_dict(stream.get('reality_settings'))
-            network = settings.VPN_NETWORK or first_non_empty(stream.get('network'), 'tcp')
-            security = settings.VPN_SECURITY or first_non_empty(stream.get('security'), 'none')
             
-            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ для отладки
+            # Получаем stream_settings - может быть объектом StreamSettings или dict
+            stream = getattr(inbound, 'stream_settings', None)
+            
+            # Если это объект StreamSettings - конвертируем в dict
+            if hasattr(stream, 'model_dump'):
+                stream_dict = stream.model_dump(by_alias=True)
+            elif isinstance(stream, dict):
+                stream_dict = stream
+            elif isinstance(stream, str) and stream:
+                try:
+                    stream_dict = json.loads(stream)
+                except:
+                    stream_dict = {}
+            else:
+                stream_dict = {}
+            
+            # Получаем reality_settings
+            reality = stream_dict.get('realitySettings', {})
+            if not reality:
+                reality = stream_dict.get('reality_settings', {})
+            
+            network = settings.VPN_NETWORK or stream_dict.get('network', 'tcp')
+            security = settings.VPN_SECURITY or stream_dict.get('security', 'none')
+            
+            # Логируем для отладки
             logger.info("=== Reality Settings Debug ===")
-            logger.info("stream keys: %s", list(stream.keys()) if stream else 'EMPTY')
+            logger.info("stream_dict keys: %s", list(stream_dict.keys()))
             logger.info("reality keys: %s", list(reality.keys()) if reality else 'EMPTY')
-            logger.info("reality content: %s", json.dumps(reality, indent=2, default=str)[:500])
-            logger.info("settings.VPN_PBK: %s", settings.VPN_PBK)
-            logger.info("settings.VPN_SID: %s", settings.VPN_SID)
-            logger.info("==============================")
+            logger.info("reality content: %s", json.dumps(reality, indent=2)[:500] if reality else 'EMPTY')
+            logger.info("==================================")
 
             params = {
                 'type': network,
@@ -562,43 +551,40 @@ def generate_client_link(inbound, client: dict) -> str:
             }
 
             if network == 'grpc':
-                params['serviceName'] = settings.VPN_SERVICE_NAME
-                params['authority'] = settings.VPN_AUTHORITY
+                params['serviceName'] = settings.VPN_SERVICE_NAME or reality.get('serviceName', '')
+                params['authority'] = settings.VPN_AUTHORITY or reality.get('authority', '')
 
             if security != 'none':
                 params['security'] = security
 
             if security == 'reality':
-                server_names = reality.get('serverNames', [])
+                # Берём publicKey и shortId напрямую из reality dict
+                pbk = reality.get('publicKey', '')
+                sid = reality.get('shortId', '')
+                sni_list = reality.get('serverNames', [])
+                sni = sni_list[0] if isinstance(sni_list, list) and sni_list else reality.get('serverName', '')
+                fp = reality.get('fingerprint', 'chrome')
+                spx = reality.get('spiderX', '/')
                 
-                # Пробуем разные варианты ключей (XUI может отдавать по-разному)
-                pbk = (settings.VPN_PBK or 
-                       reality.get('publicKey', '') or 
-                       reality.get('public_key', '') or
-                       reality.get('dest', '').split(':')[0] if ':' in reality.get('dest', '') else '')
-                
-                sid = (settings.VPN_SID or 
-                       reality.get('shortId', '') or 
-                       reality.get('short_id', ''))
-                
-                sni = (settings.VPN_SNI or 
-                       first_non_empty(
-                           server_names[0] if isinstance(server_names, list) and server_names else '',
-                           reality.get('serverName', ''),
-                           reality.get('server_names', [''])[0] if isinstance(reality.get('server_names', []), list) else '',
-                       ))
-                
-                # Логируем для отладки
-                logger.debug("Reality settings: pbk=%s, sid=%s, sni=%s", 
-                           pbk[:20] if pbk else 'EMPTY', 
-                           sid, 
-                           sni)
+                # Если в reality пусто - берём из настроек
+                if not pbk:
+                    pbk = settings.VPN_PBK
+                    logger.warning("publicKey not found in reality settings, using config value: %s", pbk[:20] if pbk else 'EMPTY')
+                if not sid:
+                    sid = settings.VPN_SID
+                    logger.warning("shortId not found in reality settings, using config value: %s", sid)
+                if not sni:
+                    sni = settings.VPN_SNI or 'www.icloud.com'
+                    logger.warning("serverName not found in reality settings, using: %s", sni)
                 
                 params['pbk'] = pbk
-                params['fp'] = settings.VPN_FP or reality.get('fingerprint', 'chrome')
+                params['fp'] = fp
                 params['sni'] = sni
                 params['sid'] = sid
-                params['spx'] = settings.VPN_SPX or reality.get('spiderX', '/')
+                params['spx'] = spx
+                
+                logger.info("Final reality params: pbk=%s..., sid=%s, sni=%s", 
+                          pbk[:20] if pbk else 'EMPTY', sid, sni)
 
             query = urlencode(params, doseq=True, quote_via=quote)
             link = f'vless://{uuid}@{host}:{port}?{query}'
