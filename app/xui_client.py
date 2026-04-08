@@ -179,27 +179,32 @@ def ensure_login() -> py3xui.Api:
     last_error = None
     for host in candidate_hosts():
         try:
+            logger.info("Attempting XUI login at: %s", host)
+            logger.info("Using username: %s", settings.XUI_USERNAME)
+            
             if api is None or api_host != host:
                 api_host = host
                 api = build_xui_api(host)
+                logger.info("Created new API client for %s", host)
             
             # Пробуем стандартный логин py3xui
             try:
                 api.login()
-                logger.info("Successfully logged in to XUI at %s", host)
+                logger.info("✅ Successfully logged in to XUI at %s", host)
                 return api
             except Exception as login_error:
-                # Если стандартный логин не сработал, пробуем прямой запрос
+                # Детальная информация об ошибке
+                logger.error("❌ XUI login failed at %s", host)
+                logger.error("   Error type: %s", type(login_error).__name__)
+                logger.error("   Error message: %s", str(login_error)[:300])
+                
+                # Проверяем это ошибка credentials или другая
                 error_msg = str(login_error).lower()
                 if "invalid username or password" in error_msg:
-                    # Логируем детали для отладки
-                    logger.error(
-                        "XUI login failed with credentials. "
-                        "Host: %s, Username: %s. "
-                        "Check if 3X-UI API credentials are correct.",
-                        host,
-                        settings.XUI_USERNAME,
-                    )
+                    logger.error("   → Credentials rejected by XUI Panel")
+                    logger.error("   → Check XUI_USERNAME and XUI_PASSWORD in .env")
+                elif "404" in error_msg or "not found" in error_msg:
+                    logger.error("   → Login endpoint not found - wrong URL format")
                 raise
         except Exception as exc:
             last_error = exc
