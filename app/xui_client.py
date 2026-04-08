@@ -499,6 +499,13 @@ def get_client_traffic(inbound_id: int, client_id: str) -> dict:
 def generate_client_link(inbound, client: dict) -> str:
     """Generate VPN connection link for client."""
     try:
+        logger.info("=== Generate Client Link Debug ===")
+        logger.info("inbound type: %s", type(inbound).__name__)
+        logger.info("inbound attributes: %s", dir(inbound))
+        logger.info("client keys: %s", list(client.keys()) if isinstance(client, dict) else 'NOT DICT')
+        logger.info("client content: %s", json.dumps(client, indent=2, default=str)[:500] if isinstance(client, dict) else str(client)[:500])
+        logger.info("==================================")
+        
         def as_dict(value):
             if value is None:
                 return {}
