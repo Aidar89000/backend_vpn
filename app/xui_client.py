@@ -594,7 +594,8 @@ def generate_client_link(inbound, client: dict) -> str:
             query = urlencode(params, doseq=True, quote_via=quote)
             link = f'vless://{uuid}@{host}:{port}?{query}'
             if remark:
-                link += f'#{remark}'
+                # Кодируем remark для URL (чтобы @ стало %40 и т.д.)
+                link += f'#{quote(remark, safe="")}'
             return link
 
         if protocol == 'vmess':
