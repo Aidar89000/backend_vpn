@@ -12,8 +12,6 @@ from telegram.ext import (
     MessageHandler,
     filters,
     CallbackQueryHandler,
-    ConversationHandler,
-    MessageFilter,
 )
 
 from app.config import get_settings
