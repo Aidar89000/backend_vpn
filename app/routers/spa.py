@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Header, status
 from jose import jwt
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -459,7 +459,7 @@ async def get_link_status(
 async def internal_confirm_link(
     payload: ConfirmLinkRequest,
     db: AsyncSession = Depends(get_db),
-    x_internal_secret: str | None = None,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
 ):
     """Internal endpoint for Telegram bot to confirm link."""
     # Verify internal secret
