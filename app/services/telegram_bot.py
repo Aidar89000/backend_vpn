@@ -3,8 +3,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import delete
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import delete, select
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.config import get_settings
@@ -25,21 +25,22 @@ def _generate_code() -> str:
 async def _get_user_by_telegram(telegram_id: int) -> User | None:
     """Find user by Telegram ID."""
     async with SessionLocal() as db:
-        from sqlalchemy import select
         result = await db.execute(
             select(User).where(User.telegram_id == telegram_id)
         )
         return result.scalar_one_or_none()
 
 
-def _build_main_menu() -> InlineKeyboardMarkup:
-    """Build main menu keyboard."""
-    keyboard = [
-        [InlineKeyboardButton("📱 Мои устройства", callback_data="devices")],
-        [InlineKeyboardButton("💰 Баланс", callback_data="balance")],
-        [InlineKeyboardButton("📊 История", callback_data="history")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+def _show_main_menu_text(user: User) -> str:
+    """Build main menu text."""
+    return (
+        f"👤 Аккаунт: {user.email}\n"
+        f"💰 Баланс: {user.balance} ₽\n\n"
+        f"Доступные команды:\n"
+        f"/devices — Мои устройства\n"
+        f"/balance — Проверить баланс\n"
+        f"/history — История операций"
+    )
 
 
 async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -78,12 +79,15 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if response.status_code == 200:
             user_email = response.json()["user_email"]
-            await update.message.reply_text(
-                f"✅ Аккаунт успешно привязан!\n\n"
-                f"Email: {user_email}\n\n"
-                f"Теперь вы можете управлять VPN прямо здесь.",
-                reply_markup=_build_main_menu(),
-            )
+            # Fetch user to show menu
+            user = await _get_user_by_telegram(telegram_id)
+            if user:
+                await update.message.reply_text(
+                    f"✅ Аккаунт успешно привязан!\n\n"
+                    f"Email: {user_email}\n\n"
+                    f"Теперь вы можете управлять VPN прямо здесь.\n\n"
+                    f"{_show_main_menu_text(user)}"
+                )
         else:
             error_data = response.json()
             error = error_data.get("detail", "")
@@ -120,8 +124,8 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user:
         await update.message.reply_text(
             f"👋 Привет, {user.email}!\n\n"
-            f"Ваш аккаунт привязан. Чем могу помочь?",
-            reply_markup=_build_main_menu(),
+            f"Ваш аккаунт привязан.\n\n"
+            f"{_show_main_menu_text(user)}"
         )
     else:
         await update.message.reply_text(
@@ -130,6 +134,54 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "2. Нажмите «Привязать Telegram»\n"
             "3. Отправьте полученную ссылку сюда"
         )
+
+
+async def _balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user:
+        return
+    user = await _get_user_by_telegram(update.effective_user.id)
+    if user:
+        await update.message.reply_text(f"💰 Ваш баланс: **{user.balance} ₽", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
+
+
+async def _devices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user:
+        return
+    user = await _get_user_by_telegram(update.effective_user.id)
+    if user:
+        async with SessionLocal() as db:
+            from app.crud.spa import list_devices
+            devices = await list_devices(db, user)
+            if devices:
+                msg = "📱 Ваши устройства:\n\n" + "\n".join(
+                    f"• {d.name} ({d.type}) — {d.status}" for d in devices
+                )
+            else:
+                msg = "📱 У вас пока нет устройств."
+        await update.message.reply_text(msg)
+    else:
+        await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
+
+
+async def _history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user:
+        return
+    user = await _get_user_by_telegram(update.effective_user.id)
+    if user:
+        async with SessionLocal() as db:
+            from app.crud.spa import list_transactions
+            txs = await list_transactions(db, user)
+            if txs:
+                msg = "📊 Последние операции:\n\n" + "\n".join(
+                    f"• {tx.created_at.strftime('%d.%m.%Y') if tx.created_at else '??.??.????'}: {tx.type} — {tx.amount} ₽ ({tx.description})" for tx in txs[:10]
+                )
+            else:
+                msg = "📊 Операций пока нет."
+        await update.message.reply_text(msg)
+    else:
+        await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
 
 
 async def _message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -147,8 +199,10 @@ async def _message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(
         f"👤 Аккаунт: {user.email}\n"
         f"💰 Баланс: {user.balance} ₽\n\n"
-        f"Используйте меню для управления.",
-        reply_markup=_build_main_menu(),
+        f"Доступные команды:\n"
+        f"/devices — Мои устройства\n"
+        f"/balance — Проверить баланс\n"
+        f"/history — История операций"
     )
 
 
@@ -161,6 +215,9 @@ async def start_bot() -> None:
     try:
         _application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
         _application.add_handler(CommandHandler("start", _start_handler))
+        _application.add_handler(CommandHandler("balance", _balance_handler))
+        _application.add_handler(CommandHandler("devices", _devices_handler))
+        _application.add_handler(CommandHandler("history", _history_handler))
         _application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _message_handler))
 
         await _application.initialize()
