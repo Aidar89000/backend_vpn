@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, BigInteger
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -12,6 +12,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     balance: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True, nullable=True, default=None)
+    telegram_username: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    telegram_linked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
@@ -20,6 +23,7 @@ class User(Base):
     vpn_keys = relationship("VPNKey", back_populates="user")
     devices = relationship("Device", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
+    link_tokens = relationship("LinkToken", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.username}>"

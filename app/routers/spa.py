@@ -20,6 +20,7 @@ from app.crud.spa import (
     top_up_balance,
     update_device_name,
 )
+from app.crud.telegram_link import create_link_token, check_link_status, confirm_link
 from app.crud.user import create_user, get_user_by_email, get_user_by_username, verify_password
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -40,6 +41,10 @@ from app.schemas.spa import (
     TopUpRequest,
     TopUpResponse,
     TransactionResponse,
+    LinkTokenResponse,
+    LinkStatusResponse,
+    ConfirmLinkRequest,
+    ConfirmLinkResponse,
 )
 from app.services.mail import EmailDeliveryError, send_login_code_email
 from app.schemas.user import UserCreate, UserResponse
@@ -261,8 +266,13 @@ async def telegram_login(payload: TelegramLoginRequest, db: AsyncSession = Depen
 
 
 @router.get("/user/profile", response_model=ProfileResponse)
-async def get_profile(current_user: UserResponse = Depends(get_current_user)):
-    return ProfileResponse(email=current_user.email, balance=current_user.balance)
+async def get_profile(current_user: User = Depends(get_current_user)):
+    return ProfileResponse(
+        email=current_user.email,
+        balance=current_user.balance,
+        telegram_id=current_user.telegram_id,
+        telegram_username=current_user.telegram_username,
+    )
 
 
 @router.get("/user/dashboard-data")
@@ -406,3 +416,74 @@ async def topup(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
     new_balance = await top_up_balance(db, current_user, payload.amount)
     return TopUpResponse(newBalance=new_balance)
+
+
+# === Telegram Link Endpoints ===
+
+@router.post("/telegram/link-token", response_model=LinkTokenResponse)
+async def generate_link_token(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a deep link token for Telegram account linking."""
+    # Check if already linked
+    if current_user.telegram_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Telegram already linked to this account"
+        )
+
+    token = await create_link_token(db, current_user)
+    bot_username = settings.TELEGRAM_BOT_USERNAME if hasattr(settings, 'TELEGRAM_BOT_USERNAME') else "your_bot_name"
+
+    return LinkTokenResponse(
+        token=token,
+        bot_username=bot_username,
+        deep_link=f"https://t.me/{bot_username}?start={token}",
+        expires_in=900,
+    )
+
+
+@router.get("/telegram/link-status", response_model=LinkStatusResponse)
+async def get_link_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check if Telegram has been linked."""
+    status = await check_link_status(db, current_user)
+    return LinkStatusResponse(**status)
+
+
+@router.post("/internal/telegram/confirm-link", response_model=ConfirmLinkResponse)
+async def internal_confirm_link(
+    payload: ConfirmLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    x_internal_secret: str | None = None,
+):
+    """Internal endpoint for Telegram bot to confirm link."""
+    # Verify internal secret
+    if x_internal_secret != settings.INTERNAL_SECRET:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    result = await confirm_link(
+        db,
+        payload.token,
+        payload.telegram_id,
+        payload.telegram_username,
+        payload.telegram_first_name,
+    )
+
+    if "error" in result:
+        error = result["error"]
+        if error == "token_expired":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="token_expired")
+        elif error == "token_used":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="token_used")
+        elif error == "token_not_found":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="token_not_found")
+        elif error == "telegram_already_linked":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="telegram_already_linked")
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+
+    return ConfirmLinkResponse(success=True, user_email=result["user_email"])

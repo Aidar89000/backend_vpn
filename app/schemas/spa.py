@@ -72,3 +72,30 @@ class TopUpResponse(BaseModel):
 class ProfileResponse(BaseModel):
     email: str
     balance: int
+    telegram_id: int | None = None
+    telegram_username: str | None = None
+
+
+class LinkTokenResponse(BaseModel):
+    token: str
+    bot_username: str
+    deep_link: str
+    expires_in: int
+
+
+class LinkStatusResponse(BaseModel):
+    linked: bool
+    telegram_username: str | None = None
+
+
+class ConfirmLinkRequest(BaseModel):
+    token: str
+    telegram_id: int
+    telegram_username: str | None = None
+    telegram_first_name: str | None = None
+
+
+class ConfirmLinkResponse(BaseModel):
+    success: bool = True
+    user_email: str | None = None
+    error: str | None = None
