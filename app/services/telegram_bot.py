@@ -323,6 +323,7 @@ async def _device_callback_handler(update: Update, context: ContextTypes.DEFAULT
                     reply_markup=_build_device_keyboard(device_id)
                 )
             except RuntimeError as e:
+                print(f"Key exchange error for device {device_id}: {e}")
                 await query.edit_message_text(f"❌ Ошибка обновления ключа: {e}")
         return
 
@@ -401,34 +402,21 @@ async def _add_device_message_handler(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text("Выберите действие:", reply_markup=_build_main_menu())
         return
 
-    # Add device via API
-    backend_url = settings.BACKEND_URL.rstrip("/")
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{backend_url}/api/user/devices",
-                json={"name": device_name, "type": device_type},
-                headers={"Authorization": f"Bearer {context.user_data.get('auth_token', '')}"},
-            )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка соединения: {e}")
-        context.user_data.pop("add_device_type", None)
-        return
-
-    # Need to use internal endpoint or direct DB approach
-    # For simplicity, let's use direct DB + XUI approach
+    # Create device directly via DB (no HTTP call needed)
     async with SessionLocal() as db:
         try:
             from app.crud.spa import create_device
             new_device = await create_device(db, user, device_name, device_type)
 
             type_labels = {"ios": "🍎 iOS", "android": "🤖 Android", "pc": "💻 PC"}
+            key_preview = new_device.connection_key[:200] + "..." if len(new_device.connection_key) > 200 else new_device.connection_key
+
             await update.message.reply_text(
                 f"✅ Устройство успешно добавлено!\n\n"
                 f"📱 *{new_device.name}* ({type_labels.get(device_type, device_type)})\n"
                 f"💰 Списано: 100 ₽\n\n"
                 f"🔑 Ключ:\n"
-                f"`{new_device.connection_key[:200]}...`\n\n"
+                f"`{key_preview}`\n\n"
                 f"Скопируйте ключ и вставьте в VPN приложение.",
                 parse_mode="Markdown",
                 reply_markup=_build_main_menu()
