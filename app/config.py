@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = "8548738879:AAG17FwYiajZp8jNHkovGxL3Ro24OIAasqE"
-    TELEGRAM_BOT_USERNAME: str = "aavpn_bot"
+    TELEGRAM_BOT_USERNAME: str = "avaraVpnBot"
     INTERNAL_SECRET: str = "change-this-to-a-random-secret-key"
 
     # App
