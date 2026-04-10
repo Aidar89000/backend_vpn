@@ -156,7 +156,7 @@ async def _devices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             devices = await list_devices(db, user)
             if devices:
                 msg = "📱 Ваши устройства:\n\n" + "\n".join(
-                    f"• {d.name} ({d.type}) — {d.status}" for d in devices
+                    f"• {d.name} ({d.device_type}) — {d.status}" for d in devices
                 )
             else:
                 msg = "📱 У вас пока нет устройств."
