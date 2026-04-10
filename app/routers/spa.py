@@ -26,6 +26,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.email_verification_code import EmailVerificationCode
 from app.models.telegram_auth_code import TelegramAuthCode
+from app.models.user import User
 from app.schemas.spa import (
     DeviceCreateRequest,
     DeviceResponse,
