@@ -4,8 +4,15 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import delete, select
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+    CallbackQueryHandler,
+)
 
 from app.config import get_settings
 from app.database import SessionLocal
@@ -141,7 +148,9 @@ async def _balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     user = await _get_user_by_telegram(update.effective_user.id)
     if user:
-        await update.message.reply_text(f"💰 Ваш баланс: **{user.balance} ₽", parse_mode="Markdown")
+        await update.message.reply_text(
+            f"💰 Ваш баланс: {user.balance} ₽"
+        )
     else:
         await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
 
@@ -150,19 +159,33 @@ async def _devices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not update.effective_user:
         return
     user = await _get_user_by_telegram(update.effective_user.id)
-    if user:
-        async with SessionLocal() as db:
-            from app.crud.spa import list_devices
-            devices = await list_devices(db, user)
-            if devices:
-                msg = "📱 Ваши устройства:\n\n" + "\n".join(
-                    f"• {d.name} ({d.device_type}) — {d.status}" for d in devices
-                )
-            else:
-                msg = "📱 У вас пока нет устройств."
-        await update.message.reply_text(msg)
-    else:
+    if not user:
         await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
+        return
+
+    async with SessionLocal() as db:
+        from app.crud.spa import list_devices
+        devices = await list_devices(db, user)
+
+    if not devices:
+        await update.message.reply_text("📱 У вас пока нет устройств.")
+        return
+
+    # Build inline keyboard with devices
+    keyboard = []
+    for d in devices:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"📱 {d.name} ({d.device_type})",
+                callback_data=f"device:{d.id}"
+            )
+        ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "📱 Ваши устройства. Выберите устройство для получения ключа:",
+        reply_markup=reply_markup
+    )
 
 
 async def _history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -182,6 +205,119 @@ async def _history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(msg)
     else:
         await update.message.reply_text("❌ Аккаунт не привязан. Используйте /start для привязки.")
+
+
+async def _device_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle device selection callback — show VPN key."""
+    query = update.callback_query
+    if not query:
+        return
+
+    await query.answer()
+
+    # Parse callback_data: "device:<id>" or "refresh:<id>"
+    data = query.data
+    parts = data.split(":", 1)
+    if len(parts) != 2:
+        return
+
+    action, device_id_str = parts
+    try:
+        device_id = int(device_id_str)
+    except ValueError:
+        await query.edit_message_text("❌ Ошибка: неверный формат запроса.")
+        return
+
+    user = await _get_user_by_telegram(query.from_user.id)
+    if not user:
+        await query.edit_message_text("❌ Аккаунт не привязан.")
+        return
+
+    if action == "device":
+        # Show device key
+        async with SessionLocal() as db:
+            from app.crud.spa import list_devices
+            devices = await list_devices(db, user)
+
+        device = next((d for d in devices if d.id == device_id), None)
+        if not device:
+            await query.edit_message_text("❌ Устройство не найдено.")
+            return
+
+        key = device.connection_key
+        # Truncate key for display if too long
+        display_key = key if len(key) <= 400 else key[:400] + "..."
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 Обновить ключ", callback_data=f"refresh:{device_id}")],
+            [InlineKeyboardButton("◀ Назад к устройствам", callback_data="devices_list")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"📱 *{device.name}* ({device.device_type})\n"
+            f"Статус: {device.status}\n\n"
+            f"🔑 Ваш VPN ключ:\n\n"
+            f"`{display_key}`\n\n"
+            f"Скопируйте ключ и вставьте в VPN приложение.",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+
+    elif action == "refresh":
+        # Exchange key
+        async with SessionLocal() as db:
+            try:
+                from app.crud.spa import exchange_device_key
+                device = await exchange_device_key(db, user, device_id)
+                if not device:
+                    await query.edit_message_text("❌ Устройство не найдено.")
+                    return
+
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Обновить ещё раз", callback_data=f"refresh:{device_id}")],
+                    [InlineKeyboardButton("◀ Назад к устройствам", callback_data="devices_list")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                display_key = device.connection_key if len(device.connection_key) <= 400 else device.connection_key[:400] + "..."
+
+                await query.edit_message_text(
+                    f"✅ Ключ успешно обновлён!\n\n"
+                    f"📱 *{device.name}*\n\n"
+                    f"🔑 Новый VPN ключ:\n\n"
+                    f"`{display_key}`\n\n"
+                    f"Обновите настройки VPN приложения.",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            except RuntimeError as e:
+                await query.edit_message_text(f"❌ Ошибка обновления ключа: {e}")
+
+    elif action == "devices_list":
+        # Show devices list again
+        async with SessionLocal() as db:
+            from app.crud.spa import list_devices
+            devices = await list_devices(db, user)
+
+        if not devices:
+            await query.edit_message_text("📱 У вас пока нет устройств.")
+            return
+
+        keyboard = []
+        for d in devices:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"📱 {d.name} ({d.device_type})",
+                    callback_data=f"device:{d.id}"
+                )
+            ])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "📱 Ваши устройства. Выберите устройство для получения ключа:",
+            reply_markup=reply_markup
+        )
 
 
 async def _message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,6 +354,7 @@ async def start_bot() -> None:
         _application.add_handler(CommandHandler("balance", _balance_handler))
         _application.add_handler(CommandHandler("devices", _devices_handler))
         _application.add_handler(CommandHandler("history", _history_handler))
+        _application.add_handler(CallbackQueryHandler(_device_callback_handler))
         _application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _message_handler))
 
         await _application.initialize()
