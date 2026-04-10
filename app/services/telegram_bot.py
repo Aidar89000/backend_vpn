@@ -39,6 +39,12 @@ async def _get_user_by_telegram(telegram_id: int) -> User | None:
         return result.scalar_one_or_none()
 
 
+async def _get_user_in_session(db, user_id: int) -> User | None:
+    """Re-fetch user within a specific session to avoid cross-session issues."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+
 def _build_main_menu() -> InlineKeyboardMarkup:
     """Build main menu keyboard."""
     keyboard = [
@@ -306,7 +312,11 @@ async def _device_callback_handler(update: Update, context: ContextTypes.DEFAULT
         async with SessionLocal() as db:
             try:
                 from app.crud.spa import exchange_device_key
-                device = await exchange_device_key(db, user, device_id)
+                db_user = await _get_user_in_session(db, user.id)
+                if not db_user:
+                    await query.edit_message_text("❌ Пользователь не найден.")
+                    return
+                device = await exchange_device_key(db, db_user, device_id)
                 if not device:
                     await query.edit_message_text("❌ Устройство не найдено.")
                     return
@@ -358,7 +368,11 @@ async def _device_callback_handler(update: Update, context: ContextTypes.DEFAULT
         async with SessionLocal() as db:
             try:
                 from app.crud.spa import delete_device
-                deleted = await delete_device(db, user, device_id)
+                db_user = await _get_user_in_session(db, user.id)
+                if not db_user:
+                    await query.edit_message_text("❌ Пользователь не найден.")
+                    return
+                deleted = await delete_device(db, db_user, device_id)
                 if not deleted:
                     await query.edit_message_text("❌ Устройство не найдено.")
                     return
@@ -406,7 +420,16 @@ async def _add_device_message_handler(update: Update, context: ContextTypes.DEFA
     async with SessionLocal() as db:
         try:
             from app.crud.spa import create_device
-            new_device = await create_device(db, user, device_name, device_type)
+            # Re-fetch user in this session to avoid cross-session issues
+            from sqlalchemy import select
+            result = await db.execute(select(User).where(User.id == user.id))
+            db_user = result.scalar_one_or_none()
+            if not db_user:
+                await update.message.reply_text("❌ Пользователь не найден.")
+                context.user_data.pop("add_device_type", None)
+                return
+
+            new_device = await create_device(db, db_user, device_name, device_type)
 
             type_labels = {"ios": "🍎 iOS", "android": "🤖 Android", "pc": "💻 PC"}
             key_preview = new_device.connection_key[:200] + "..." if len(new_device.connection_key) > 200 else new_device.connection_key
