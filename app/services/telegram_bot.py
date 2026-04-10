@@ -55,10 +55,12 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if args and len(args) >= 1:
         token = args[0]
 
-        async with httpx.AsyncClient() as client:
-            try:
+        backend_url = settings.BACKEND_URL.rstrip("/")
+
+        try:
+            async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{settings.REPO_DIR}/api/internal/telegram/confirm-link",
+                    f"{backend_url}/api/internal/telegram/confirm-link",
                     json={
                         "token": token,
                         "telegram_id": telegram_id,
@@ -67,24 +69,12 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     },
                     headers={"X-Internal-Secret": settings.INTERNAL_SECRET},
                 )
-            except Exception:
-                # Try localhost URL for development
-                try:
-                    response = await client.post(
-                        "http://localhost:8000/api/internal/telegram/confirm-link",
-                        json={
-                            "token": token,
-                            "telegram_id": telegram_id,
-                            "telegram_username": telegram_username,
-                            "telegram_first_name": telegram_first_name,
-                        },
-                        headers={"X-Internal-Secret": settings.INTERNAL_SECRET},
-                    )
-                except Exception:
-                    await update.message.reply_text(
-                        "❌ Ошибка соединения с сервером. Попробуйте позже."
-                    )
-                    return
+        except Exception as e:
+            print(f"Telegram bot HTTP error: {e}")
+            await update.message.reply_text(
+                "❌ Ошибка соединения с сервером. Попробуйте позже."
+            )
+            return
 
         if response.status_code == 200:
             user_email = response.json()["user_email"]
@@ -97,6 +87,7 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else:
             error_data = response.json()
             error = error_data.get("detail", "")
+            print(f"Telegram link error: status={response.status_code}, body={error_data}")
 
             if error == "token_expired":
                 await update.message.reply_text(
@@ -110,9 +101,17 @@ async def _start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_text(
                     "⚠️ Этот Telegram уже привязан к другому аккаунту."
                 )
+            elif error == "token_not_found":
+                await update.message.reply_text(
+                    "❌ Токен не найден. Запросите новую ссылку на сайте."
+                )
+            elif error == "Forbidden":
+                await update.message.reply_text(
+                    "❌ Ошибка сервера: неверный секретный ключ."
+                )
             else:
                 await update.message.reply_text(
-                    "❌ Что-то пошло не так. Попробуйте снова."
+                    f"❌ Ошибка: {error or 'неизвестная'}. Попробуйте снова."
                 )
         return
 

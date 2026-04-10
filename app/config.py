@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = "8548738879:AAG17FwYiajZp8jNHkovGxL3Ro24OIAasqE"
     TELEGRAM_BOT_USERNAME: str = "avaraVpnBot"
     INTERNAL_SECRET: str = "change-this-to-a-random-secret-key"
+    BACKEND_URL: str = "http://localhost:8000"
 
     # App
     APP_NAME: str = "VPN Key Manager"
