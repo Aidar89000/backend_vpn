@@ -59,6 +59,7 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     parsed = parse_qs(unquote(init_data))
     received_hash = parsed.get("hash", [None])[0]
     if not received_hash:
+        print(f"[validate_init] No hash found in parsed data")
         return None
 
     # Remove hash from data for verification
@@ -70,19 +71,27 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     secret_key = hashlib.sha256(bot_token.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
+    print(f"[validate_init] Received hash: {received_hash}")
+    print(f"[validate_init] Computed hash: {computed_hash}")
+    print(f"[validate_init] Data check string: {data_check_string[:200]}")
+
     if not hmac.compare_digest(computed_hash, received_hash):
+        print(f"[validate_init] Hash mismatch!")
         return None
 
     # Parse user data
     user_data = data_check_parts.get("user")
     if not user_data:
+        print(f"[validate_init] No user data found")
         return None
 
     try:
         user = json.loads(user_data)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"[validate_init] Failed to parse user JSON: {e}")
         return None
 
+    print(f"[validate_init] Success! user_id={user.get('id')}")
     return user
 
 from app.schemas.user import UserCreate, UserResponse
@@ -314,8 +323,12 @@ async def telegram_webapp_login(payload: dict, db: AsyncSession = Depends(get_db
     if not settings.TELEGRAM_BOT_TOKEN:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram not configured")
 
+    # Debug logging
+    print(f"[telegram-webapp] Received init_data (first 100 chars): {init_data[:100]}")
+
     user_data = validate_telegram_init_data(init_data, settings.TELEGRAM_BOT_TOKEN)
     if not user_data:
+        print(f"[telegram-webapp] HMAC validation failed")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid initData")
 
     telegram_id = user_data.get("id")
