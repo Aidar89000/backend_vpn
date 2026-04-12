@@ -1,5 +1,9 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
+import json
 import secrets
+from urllib.parse import parse_qs, unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from jose import jwt
@@ -48,6 +52,39 @@ from app.schemas.spa import (
     ConfirmLinkResponse,
 )
 from app.services.mail import EmailDeliveryError, send_login_code_email
+
+
+def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
+    """Validate Telegram WebApp initData and return parsed user data."""
+    parsed = parse_qs(unquote(init_data))
+    received_hash = parsed.get("hash", [None])[0]
+    if not received_hash:
+        return None
+
+    # Remove hash from data for verification
+    data_check_parts = {k: v[0] for k, v in parsed.items() if k != "hash"}
+    sorted_parts = sorted(data_check_parts.items())
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted_parts)
+
+    # Compute HMAC
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(computed_hash, received_hash):
+        return None
+
+    # Parse user data
+    user_data = data_check_parts.get("user")
+    if not user_data:
+        return None
+
+    try:
+        user = json.loads(user_data)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    return user
+
 from app.schemas.user import UserCreate, UserResponse
 
 router = APIRouter(prefix="/api", tags=["spa"])
@@ -260,6 +297,44 @@ async def telegram_login(payload: TelegramLoginRequest, db: AsyncSession = Depen
 
     await db.commit()
     await db.refresh(user)
+    return SessionResponse(
+        access_token=create_access_token(user.id),
+        user=SessionUser(id=user.id, email=user.email, balance=user.balance),
+    )
+
+
+@router.post("/auth/telegram-webapp", response_model=SessionResponse)
+async def telegram_webapp_login(payload: dict, db: AsyncSession = Depends(get_db)):
+    """Auto-login via Telegram WebApp initData."""
+    init_data = payload.get("init_data", "").strip()
+    if not init_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="init_data required")
+
+    settings = get_settings()
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram not configured")
+
+    user_data = validate_telegram_init_data(init_data, settings.TELEGRAM_BOT_TOKEN)
+    if not user_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid initData")
+
+    telegram_id = user_data.get("id")
+    if not telegram_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No user id in initData")
+
+    # Find user by telegram_id
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telegram account not linked to any user")
+
+    # Update telegram username if available
+    tg_username = user_data.get("username")
+    if tg_username and user.telegram_username != tg_username:
+        user.telegram_username = tg_username
+        await db.commit()
+
     return SessionResponse(
         access_token=create_access_token(user.id),
         user=SessionUser(id=user.id, email=user.email, balance=user.balance),
