@@ -56,28 +56,34 @@ from app.services.mail import EmailDeliveryError, send_login_code_email
 
 def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     """Validate Telegram WebApp initData and return parsed user data."""
-    # parse_qs already does URL decoding — don't pre-unquote
-    parsed = parse_qs(init_data)
+    # Parse query string - parse_qs returns lists as values
+    parsed = parse_qs(init_data, keep_blank_values=True)
     received_hash = parsed.get("hash", [None])[0]
     if not received_hash:
         print(f"[validate_init] No hash found in parsed data")
         return None
 
     # Remove hash from data for verification
+    # For each key, take the first value (Telegram doesn't send duplicates)
     data_check_parts = {k: v[0] for k, v in parsed.items() if k != "hash"}
+    
+    # Sort by key and build data check string
     sorted_parts = sorted(data_check_parts.items())
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted_parts)
 
-    # Compute HMAC
+    # Compute HMAC - secret key is SHA256 of bot token
     secret_key = hashlib.sha256(bot_token.encode()).digest()
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
     print(f"[validate_init] Received hash: {received_hash}")
     print(f"[validate_init] Computed hash: {computed_hash}")
     print(f"[validate_init] Data check string (first 300): {data_check_string[:300]}")
+    print(f"[validate_init] Sorted keys: {[k for k, v in sorted_parts]}")
+    print(f"[validate_init] Bot token (first 10 chars): {bot_token[:10]}...")
 
     if not hmac.compare_digest(computed_hash, received_hash):
         print(f"[validate_init] Hash mismatch!")
+        print(f"[validate_init] FULL data_check_string:\n{data_check_string}")
         return None
 
     # Parse user data
