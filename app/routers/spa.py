@@ -71,8 +71,9 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     sorted_parts = sorted(data_check_parts.items())
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted_parts)
 
-    # Compute HMAC - secret key is SHA256 of bot token
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    # Compute HMAC - secret key is HMAC-SHA256("WebAppData", bot_token)
+    # This is the CORRECT algorithm per Telegram docs
+    secret_key = hmac.new("WebAppData".encode(), bot_token.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
     print(f"[validate_init] Received hash: {received_hash}")
@@ -85,6 +86,19 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
         print(f"[validate_init] Hash mismatch!")
         print(f"[validate_init] FULL data_check_string:\n{data_check_string}")
         return None
+
+    # Check auth_date to prevent replay attacks
+    auth_date_str = data_check_parts.get("auth_date")
+    if auth_date_str:
+        try:
+            auth_date = datetime.fromtimestamp(int(auth_date_str), tz=timezone.utc)
+            age = datetime.now(timezone.utc) - auth_date
+            if age.total_seconds() > 3600:  # 1 hour
+                print(f"[validate_init] Data too old: {age.total_seconds():.0f} seconds")
+                return None
+        except (ValueError, OSError) as e:
+            print(f"[validate_init] Invalid auth_date: {e}")
+            return None
 
     # Parse user data
     user_data = data_check_parts.get("user")
