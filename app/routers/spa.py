@@ -56,7 +56,8 @@ from app.services.mail import EmailDeliveryError, send_login_code_email
 
 def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     """Validate Telegram WebApp initData and return parsed user data."""
-    parsed = parse_qs(unquote(init_data))
+    # parse_qs already does URL decoding — don't pre-unquote
+    parsed = parse_qs(init_data)
     received_hash = parsed.get("hash", [None])[0]
     if not received_hash:
         print(f"[validate_init] No hash found in parsed data")
@@ -73,7 +74,7 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
 
     print(f"[validate_init] Received hash: {received_hash}")
     print(f"[validate_init] Computed hash: {computed_hash}")
-    print(f"[validate_init] Data check string: {data_check_string[:200]}")
+    print(f"[validate_init] Data check string (first 300): {data_check_string[:300]}")
 
     if not hmac.compare_digest(computed_hash, received_hash):
         print(f"[validate_init] Hash mismatch!")
