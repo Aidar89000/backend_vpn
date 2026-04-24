@@ -222,9 +222,8 @@ async def email_login(payload: EmailLoginRequest, db: AsyncSession = Depends(get
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code expired")
 
     verification.is_used = True
-    user = await _get_or_create_email_user(db, payload.email)
     await db.commit()
-    await db.refresh(user)
+    user = await _get_or_create_email_user(db, payload.email)
     return SessionResponse(
         access_token=create_access_token(user.id),
         user=SessionUser(id=user.id, email=user.email, balance=user.balance),
@@ -272,10 +271,6 @@ async def email_register(payload: EmailPasswordRequest, db: AsyncSession = Depen
         db,
         UserCreate(username=username, email=payload.email, password=payload.password),
     )
-    
-    await db.commit()
-    await db.refresh(user)
-    
     return SessionResponse(
         access_token=create_access_token(user.id),
         user=SessionUser(id=user.id, email=user.email, balance=user.balance),
@@ -307,6 +302,7 @@ async def telegram_login(payload: TelegramLoginRequest, db: AsyncSession = Depen
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Код истёк")
 
     auth_code.is_used = True
+    await db.commit()
 
     telegram_id = auth_code.telegram_id
     tg_email = f"tg_{telegram_id}@telegram.local"
@@ -325,8 +321,6 @@ async def telegram_login(payload: TelegramLoginRequest, db: AsyncSession = Depen
             UserCreate(username=username, email=tg_email, password=secrets.token_urlsafe(32)),
         )
 
-    await db.commit()
-    await db.refresh(user)
     return SessionResponse(
         access_token=create_access_token(user.id),
         user=SessionUser(id=user.id, email=user.email, balance=user.balance),
