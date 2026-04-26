@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class PaymentCreateRequest(BaseModel):
     amount: int = Field(gt=0)
-    payment_method: Literal["sbp", "erip", "card", "international", "crypto"]
+    payment_method: Literal["sbp", "card", "crypto"]
     description: str | None = None
 
 

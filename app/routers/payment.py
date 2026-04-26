@@ -27,9 +27,7 @@ settings = get_settings()
 
 PLATEGA_METHODS = {
     "sbp": 2,
-    "erip": 3,
     "card": 11,
-    "international": 12,
     "crypto": 13,
 }
 PLATEGA_SUCCESS_STATUSES = {"CONFIRMED"}
