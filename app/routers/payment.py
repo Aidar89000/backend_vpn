@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 settings = get_settings()
 
 PLATEGA_SBP_METHOD = 2
+PLATEGA_CARD_METHOD = 11
 PLATEGA_SUCCESS_STATUSES = {"CONFIRMED"}
 PLATEGA_REVERT_STATUSES = {"CHARGEBACKED"}
 
@@ -79,7 +80,7 @@ async def create_payment(
     if payload.amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
 
-    payment_method = PLATEGA_SBP_METHOD if payload.payment_method == "sbp" else None
+    payment_method = PLATEGA_SBP_METHOD if payload.payment_method == "sbp" else PLATEGA_CARD_METHOD
     description = payload.description or f"Пополнение баланса на {payload.amount} RUB"
 
     transaction = Transaction(
