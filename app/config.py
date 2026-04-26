@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     INTERNAL_SECRET: str = "change-this-to-a-random-secret-key"
     BACKEND_URL: str = "http://localhost:8000"
 
+    # Platega Payment Gateway
+    PLATEGA_BASE_URL: str = "https://app.platega.io"
+    PLATEGA_MERCHANT_ID: str = ""  # To be set in .env
+    PLATEGA_SECRET: str = ""  # To be set in .env
+
     # App
     APP_NAME: str = "VPN Key Manager"
     DEBUG: bool = True

@@ -52,6 +52,22 @@ async def init_db():
         if "telegram_linked_at" not in user_columns:
             sync_conn.exec_driver_sql("ALTER TABLE users ADD COLUMN telegram_linked_at TIMESTAMP")
 
+        # Transaction platega columns
+        transaction_inspector = sync_conn.exec_driver_sql("PRAGMA table_info(transactions)")
+        transaction_columns = {row[1] for row in transaction_inspector.fetchall()}
+        if "platega_transaction_id" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_transaction_id VARCHAR(36)")
+        if "platega_status" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_status VARCHAR(32)")
+        if "platega_url" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_url TEXT")
+        if "platega_expires_in" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_expires_in VARCHAR(16)")
+        if "platega_rate" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_rate FLOAT")
+        if "platega_payload" not in transaction_columns:
+            sync_conn.exec_driver_sql("ALTER TABLE transactions ADD COLUMN platega_payload TEXT")
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(ensure_sqlite_columns)

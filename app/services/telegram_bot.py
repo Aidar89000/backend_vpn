@@ -1,5 +1,6 @@
 import asyncio
 import secrets
+import sys
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -20,6 +21,9 @@ from app.models.telegram_auth_code import TelegramAuthCode
 from app.models.user import User
 
 settings = get_settings()
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True, write_through=True)
 
 # Conversation states
 WAITING_DEVICE_NAME = 1

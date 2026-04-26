@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+import sys
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,10 +9,13 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, init_db
-from app.routers import auth, spa, vpn
+from app.routers import auth, spa, vpn, payment
 from app.services.telegram_bot import start_bot, stop_bot
 
 settings = get_settings()
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True, write_through=True)
 
 
 @asynccontextmanager
@@ -64,6 +68,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(spa.router)
 app.include_router(vpn.router)
+app.include_router(payment.router)
 
 
 @app.get("/")

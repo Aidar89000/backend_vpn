@@ -8,6 +8,7 @@
 - ✅ Генерация VPN ключей через XUI Panel
 - ✅ Поддержка протоколов: VLESS, VMess, Trojan, Shadowsocks
 - ✅ Управление ключами (просмотр, отзыв, статистика)
+- ✅ **Платежная система Platega.io для пополнения баланса**
 - ✅ PostgreSQL для хранения данных
 - ✅ Redis для кеширования
 - ✅ Jinja2 шаблоны для веб-страниц
@@ -70,6 +71,22 @@ XUI_HOST=https://194.87.25.149:21346
 XUI_USERNAME=8PpR8fSJfS
 XUI_PASSWORD=***
 ```
+
+#### Настройка платежной системы Platega.io
+
+1. Зайдите в личный кабинет Platega.io: https://platega.io/
+2. Войдите с учетными данными: UserTest11 / UserTestpass
+3. Перейдите в раздел "Настройки" для получения MerchantId и API Secret
+4. Добавьте в `.env`:
+
+```env
+PLATEGA_MERCHANT_ID=ваш-merchant-id
+PLATEGA_SECRET=ваш-api-secret
+```
+
+5. Настройте callback URL в личном кабинете Platega:
+   - URL: `https://ваш-домен/payment/callback`
+   - Метод: POST
 
 При необходимости отредактируйте другие параметры.
 

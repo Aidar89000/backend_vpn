@@ -516,10 +516,10 @@ async def topup(
     db: AsyncSession = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    if payload.amount <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
-    new_balance = await top_up_balance(db, current_user, payload.amount)
-    return TopUpResponse(newBalance=new_balance)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Direct top-up is disabled. Use /api/payments/create and payment status confirmation.",
+    )
 
 
 # === Telegram Link Endpoints ===

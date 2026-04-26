@@ -160,6 +160,16 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
     return False
 
 
+async def update_user_balance(db: AsyncSession, user_id: int, amount: int) -> User | None:
+    user = await get_user(db, user_id)
+    if user:
+        user.balance += amount
+        await db.commit()
+        await db.refresh(user)
+        return user
+    return None
+
+
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
     user = await get_user_by_username(db, username)
     if not user:
