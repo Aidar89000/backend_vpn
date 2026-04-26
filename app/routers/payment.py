@@ -25,8 +25,13 @@ from app.services.platega import (
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 settings = get_settings()
 
-PLATEGA_SBP_METHOD = 2
-PLATEGA_CARD_METHOD = 11
+PLATEGA_METHODS = {
+    "sbp": 2,
+    "erip": 3,
+    "card": 11,
+    "international": 12,
+    "crypto": 13,
+}
 PLATEGA_SUCCESS_STATUSES = {"CONFIRMED"}
 PLATEGA_REVERT_STATUSES = {"CHARGEBACKED"}
 
@@ -80,7 +85,10 @@ async def create_payment(
     if payload.amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
 
-    payment_method = PLATEGA_SBP_METHOD if payload.payment_method == "sbp" else PLATEGA_CARD_METHOD
+    payment_method = PLATEGA_METHODS.get(payload.payment_method)
+    if payment_method is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment method")
+
     description = payload.description or f"Пополнение баланса на {payload.amount} RUB"
 
     transaction = Transaction(

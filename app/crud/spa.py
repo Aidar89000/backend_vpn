@@ -298,6 +298,6 @@ def serialize_transaction(transaction: Transaction) -> dict:
         "id": str(transaction.id),
         "type": transaction.type,
         "amount": transaction.amount,
-        "date": _format_tx_date(transaction.created_at),
+        "date": transaction.created_at.isoformat(),
         "description": transaction.description,
     }
