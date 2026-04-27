@@ -94,6 +94,7 @@ async def create_payment(
         type="topup",
         amount=payload.amount,
         description=description,
+        platega_status="PENDING",
     )
     db.add(transaction)
     await db.flush()

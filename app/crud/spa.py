@@ -103,9 +103,24 @@ async def list_devices(db: AsyncSession, user: User) -> list[Device]:
 
 
 async def list_transactions(db: AsyncSession, user: User) -> list[Transaction]:
+    """
+    Get transactions for user.
+    For topup (payment) transactions: only show if confirmed by Platega.
+    For other transactions (purchase, refund): show immediately.
+    """
+    from sqlalchemy import or_
     result = await db.execute(
         select(Transaction)
-        .where(Transaction.user_id == user.id)
+        .where(
+            Transaction.user_id == user.id,
+            or_(
+                Transaction.type != "topup",
+                (
+                    (Transaction.type == "topup")
+                    & (Transaction.platega_status == "CONFIRMED")
+                ),
+            ),
+        )
         .order_by(Transaction.created_at.desc())
     )
     return list(result.scalars().all())
