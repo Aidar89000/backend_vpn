@@ -59,6 +59,7 @@ class TransactionResponse(BaseModel):
     amount: int
     date: str
     description: str
+    status: str | None = None
 
 
 class TopUpRequest(BaseModel):

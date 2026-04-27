@@ -15,6 +15,22 @@ DEVICE_PRICE = 100
 
 logger = logging.getLogger(__name__)
 
+FINALIZED_TOPUP_STATUSES = {"CONFIRMED", "CANCELED", "CANCELLED", "FAILED", "EXPIRED", "CHARGEBACKED"}
+
+
+def _serialize_transaction_status(platega_status: str | None) -> str | None:
+    if not platega_status:
+        return None
+
+    normalized_status = platega_status.upper()
+    if normalized_status == "CONFIRMED":
+        return "confirmed"
+    if normalized_status in {"PENDING", "PROCESSING", "CREATED"}:
+        return "pending"
+    if normalized_status in {"CANCELED", "CANCELLED"}:
+        return "cancelled"
+    return "failed"
+
 
 def _device_xui_email(user: User, device_id: int) -> str:
     """Generate XUI email for a device. Use fixed domain to avoid invalid characters."""
@@ -105,7 +121,8 @@ async def list_devices(db: AsyncSession, user: User) -> list[Device]:
 async def list_transactions(db: AsyncSession, user: User) -> list[Transaction]:
     """
     Get transactions for user.
-    For topup (payment) transactions: only show if confirmed by Platega.
+    For topup (payment) transactions: only show finalized payments.
+    Pending payments are hidden from history until Platega returns a final status.
     For other transactions (purchase, refund): show immediately.
     """
     from sqlalchemy import or_
@@ -117,7 +134,7 @@ async def list_transactions(db: AsyncSession, user: User) -> list[Transaction]:
                 Transaction.type != "topup",
                 (
                     (Transaction.type == "topup")
-                    & (Transaction.platega_status == "CONFIRMED")
+                    & (Transaction.platega_status.in_(FINALIZED_TOPUP_STATUSES))
                 ),
             ),
         )
@@ -315,4 +332,5 @@ def serialize_transaction(transaction: Transaction) -> dict:
         "amount": transaction.amount,
         "date": transaction.created_at.isoformat(),
         "description": transaction.description,
+        "status": _serialize_transaction_status(transaction.platega_status),
     }

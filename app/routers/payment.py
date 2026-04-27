@@ -32,6 +32,7 @@ PLATEGA_METHODS = {
 }
 PLATEGA_SUCCESS_STATUSES = {"CONFIRMED"}
 PLATEGA_REVERT_STATUSES = {"CHARGEBACKED"}
+PLATEGA_FINAL_STATUSES = {"CONFIRMED", "CANCELED", "CANCELLED", "FAILED", "EXPIRED", "CHARGEBACKED"}
 
 
 def _build_return_url(status_name: str) -> str:
@@ -176,7 +177,7 @@ async def get_payment_status(
         amount=transaction.amount,
         payment_url=transaction.platega_url,
         expires_in=transaction.platega_expires_in,
-        is_completed=(transaction.platega_status or "").upper() in {"CONFIRMED", "CANCELED", "CHARGEBACKED"},
+        is_completed=(transaction.platega_status or "").upper() in PLATEGA_FINAL_STATUSES,
     )
 
 
